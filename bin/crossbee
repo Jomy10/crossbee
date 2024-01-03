@@ -1,0 +1,81 @@
+require 'cross'
+require 'tty-command'
+require 'workers'
+
+def start()
+  if ARGV.count < 4
+    STDERR.puts "[ERR] Not enough arguments in command `start`"
+    help()
+    exit 1
+  end
+  
+  os = ARGV[1]
+  arch = ARGV[2]
+  cmd = ARGV[3]
+  tools = ARGV[4..]
+
+  toolchains = tools.map do |tool|
+    [tool, Cross::Tool::get_toolchain(tool)]
+  end
+
+  instances = toolchains.map do |tool, toolchain|
+    [tool, toolchain::Instance.start(os, arch)]
+  end.to_h
+
+  begin
+    tty_cmd = TTY::Command.new(pty: true, verbose: false)
+    tty_cmd.run(
+      instances
+        .map { |tool, instance| [Cross::Tool::get_env_name(tool), "crossbee invoke #{instance.name} #{tool}"] }
+        .to_h,
+      cmd
+    )
+  ensure
+    Workers.map(instances) do |_, instance|
+      instance.stop()
+    end
+  end
+end
+
+def invoke()
+  instance_name = ARGV[1]
+  tool = ARGV[2]
+  args = ARGV[3..]
+
+  toolchain = Cross::Tool::get_toolchain(tool)
+  instance = toolchain::Instance.get(instance_name)
+
+  instance.exec([tool, *args])
+end
+
+def help()
+  crossbee = `basename #{$0}`.gsub("\n", "")
+  puts <<-USAGE
+Usage: #{crossbee} [command]
+
+Environment variables:
+CONTAINER_MANAGER     The container manager to use. Default value is `podman`
+
+Commands:
+start [os] [arch] [command] [tools]   Start a new environment for compiling
+                                      to the `os` and architecture `arch`
+                                      with the `tools` initialized in this
+                                      environment. Invokes the `command`.
+                                      e.g. `#{crossbee} start linux arm64
+                                      "ruby make.rb" clang ar clang++`
+
+help                                  Prints this help message
+USAGE
+end
+
+case ARGV[0]
+when "start"
+  start()
+when "invoke"
+  invoke()
+when "help"
+  help()
+else
+  puts "Invalid command #{ARGV[0]}"
+end
+
