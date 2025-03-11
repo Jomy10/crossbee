@@ -3,7 +3,7 @@
 A cross-compilation toolchain using docker for any build system.
 
 > [!WARNING]
-> **In early development**
+> I am no longer actively maintining this project
 
 ## Examples
 
